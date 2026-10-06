@@ -1,0 +1,3 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><TargetFramework>netstandard2.1</TargetFramework></PropertyGroup><ItemGroup><Reference Include="Unity.Collections"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/Unity.Collections.dll</HintPath></Reference>
+<Reference Include="Unity.Mathematics"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/Unity.Mathematics.dll</HintPath></Reference>
+</ItemGroup></Project>

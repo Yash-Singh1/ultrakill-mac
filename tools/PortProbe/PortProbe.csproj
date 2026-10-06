@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <GameManagedPath Condition="'$(GameManagedPath)' == ''">$(MSBuildThisFileDirectory)../../ULTRAKILL.app/Contents/Resources/Data/Managed</GameManagedPath>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <DefineConstants>ENABLE_PROFILER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableFraudTests)' == 'true'">
+    <DefineConstants>$(DefineConstants);FRAUD_TEST_TOOLS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(EnableFraudTests)' != 'true'">
+    <Compile Remove="FraudBenchmark.cs;BurstCheck.cs;FraudVisualCheck.cs;ShockwaveCheck.cs;BloodTransitionCheck.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Unity.Burst"><HintPath>$(GameManagedPath)/Unity.Burst.dll</HintPath></Reference>
+    <Reference Include="Unity.Collections"><HintPath>$(GameManagedPath)/Unity.Collections.dll</HintPath></Reference>
+    <Reference Include="Unity.Mathematics"><HintPath>$(GameManagedPath)/Unity.Mathematics.dll</HintPath></Reference>
+    <Reference Include="Facepunch.Steamworks.Win64"><HintPath>$(GameManagedPath)/Facepunch.Steamworks.Win64.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.AudioModule"><HintPath>$(GameManagedPath)/UnityEngine.AudioModule.dll</HintPath></Reference>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameManagedPath)/Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameManagedPath)/UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>$(GameManagedPath)/UnityEngine.ParticleSystemModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(GameManagedPath)/UnityEngine.PhysicsModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>$(GameManagedPath)/UnityEngine.UI.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>$(GameManagedPath)/UnityEngine.UIModule.dll</HintPath></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>$(GameManagedPath)/Unity.TextMeshPro.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>$(GameManagedPath)/UnityEngine.InputLegacyModule.dll</HintPath></Reference>
+  <Reference Include="UnityEngine.ProfilerModule"><HintPath>$(GameManagedPath)/UnityEngine.ProfilerModule.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

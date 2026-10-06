@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <GameManagedPath Condition="'$(GameManagedPath)' == ''">$(MSBuildThisFileDirectory)../../ULTRAKILL.app/Contents/Resources/Data/Managed</GameManagedPath>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion><AssemblyName>MacBloodRenderer</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameManagedPath)/Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameManagedPath)/UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>$(GameManagedPath)/UnityEngine.ParticleSystemModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(GameManagedPath)/UnityEngine.PhysicsModule.dll</HintPath></Reference>
+  <Reference Include="Unity.Collections"><HintPath>$(GameManagedPath)/Unity.Collections.dll</HintPath></Reference>
+<Reference Include="Unity.Mathematics"><HintPath>$(GameManagedPath)/Unity.Mathematics.dll</HintPath></Reference>
+<Reference Include="UnityEngine.ProfilerModule"><HintPath>$(GameManagedPath)/UnityEngine.ProfilerModule.dll</HintPath></Reference></ItemGroup>
+</Project>

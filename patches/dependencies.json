@@ -1,0 +1,35 @@
+[
+  {
+    "name": "casualties-port",
+    "url": "https://github.com/Andreansx/casualties-unknown-apple-silicon.git",
+    "revision": "25410b41348a3b70b9d8eaf41ee98118e6549bf1",
+    "destination": "third_party/casualties-port",
+    "patch": "casualties-port.patch"
+  },
+  {
+    "name": "HLSLcc",
+    "url": "https://github.com/Unity-Technologies/HLSLcc.git",
+    "revision": "3ea1fcd6bd0ac445bc078de0bf32f0950188577b",
+    "destination": "third_party/casualties-port/tools/hlslcc/HLSLcc",
+    "patch": "HLSLcc.patch"
+  },
+  {
+    "name": "HLSLDecompiler",
+    "url": "https://github.com/etnlGD/HLSLDecompiler.git",
+    "revision": "80aaaee96a217e54f0f56fc5d52d731857beac5a",
+    "destination": "third_party/HLSLDecompiler",
+    "patch": "HLSLDecompiler.patch"
+  },
+  {
+    "name": "SPIRV-Cross",
+    "url": "https://github.com/KhronosGroup/SPIRV-Cross.git",
+    "revision": "aa217aeb6c9f0ace7a0ab233b28807edf45eb165",
+    "destination": "third_party/SPIRV-Cross"
+  },
+  {
+    "name": "unity-nsisbi-ext",
+    "url": "https://github.com/kmod-midori/unity-nsisbi-ext.git",
+    "revision": "fdaf2d6dd8126c4964104a582b64825f08a88cf5",
+    "destination": "third_party/unity-nsisbi-ext"
+  }
+]

@@ -1,0 +1,7 @@
+*.py text eol=lf
+*.swift text eol=lf
+*.cs text
+*.csproj text
+*.mm text eol=lf
+*.md text eol=lf
+*.patch -text -whitespace

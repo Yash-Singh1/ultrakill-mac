@@ -1,0 +1,349 @@
+diff --git a/tools/rewrap/dxbc2msl.py b/tools/rewrap/dxbc2msl.py
+index 14600d7..ccc3aa4 100644
+--- a/tools/rewrap/dxbc2msl.py
++++ b/tools/rewrap/dxbc2msl.py
+@@ -38,13 +38,15 @@ def parse_dcls(shdr):
+     stage = (ver >> 16) & 0xFFFF          # 0 pixel, 1 vertex
+     major = (ver >> 4) & 0xF
+     length = struct.unpack_from("<I", shdr, 4)[0]   # in dwords, incl. 2 hdr
+-    out = {"stage": stage, "major": major, "cbs": {}, "textures": {}, "samplers": []}
++    out = {"stage": stage, "major": major, "cbs": {}, "textures": {}, "samplers": [], "structured": {}, "uavs": {}}
+     p = 8
+     end = min(length * 4, len(shdr))
+     while p + 4 <= end:
+         tok = struct.unpack_from("<I", shdr, p)[0]
+         op = tok & 0x7FF
+         olen = (tok >> 24) & 0x7F
++        if op == 53:  # CUSTOMDATA uses its second word for the block length.
++            olen = struct.unpack_from('<I', shdr, p+4)[0]
+         if olen == 0:
+             break
+         if op == 0x59:    # dcl_constantbuffer cbN[size]
+@@ -58,6 +60,12 @@ def parse_dcls(shdr):
+         elif op == 0x5A:  # dcl_sampler
+             slot = struct.unpack_from("<I", shdr, p+8)[0]
+             out["samplers"].append(slot)
++        elif op == 162:  # dcl_resource_structured
++            slot, stride = struct.unpack_from("<II", shdr, p+8)
++            out["structured"][slot] = stride
++        elif op == 158:  # dcl_uav_structured
++            slot, stride = struct.unpack_from('<II',shdr,p+8)
++            out['uavs'][slot] = stride
+         p += olen * 4
+     return out
+ 
+@@ -101,6 +109,12 @@ def build_rdef(dcls, names, stage, major=4):
+     for slot in sorted(dcls["samplers"]):
+         nm = names.get("samplers", {}).get(slot, f"sampler{slot}")
+         bindings.append((nm, 3, 0, 0, 0, slot))
++    # ULTRAKILL supplies structured SRVs in its variant parameter bindings.
++    for slot in sorted(dcls.get("structured", {})):
++        nm = names.get("buffers", {}).get(slot, f"structured{slot}")
++        bindings.append((nm, 5, 6, 1, 0xFFFFFFFF, slot))
++    for slot in sorted(dcls.get('uavs',{})):
++        bindings.append((f'uav{slot}',6,6,1,0xFFFFFFFF,slot))
+ 
+     cbs = []
+     for slot in sorted(dcls["cbs"]):
+@@ -125,6 +139,13 @@ def build_rdef(dcls, names, stage, major=4):
+         members.sort(key=lambda m: m[1])
+         cbs.append((nm, size, members))
+ 
++    # HLSLcc obtains structured-buffer strides from reflection CB records.
++    for slot, stride in sorted(dcls.get("structured", {}).items()):
++        nm = names.get("buffers", {}).get(slot, f"structured{slot}")
++        cbs.append((nm, stride, []))
++    for slot, stride in sorted(dcls.get('uavs',{}).items()):
++        cbs.append((f'uav{slot}',stride,[]))
++
+     hdr_size = 6 * 4
+     bind_off = hdr_size
+     bind_size = len(bindings) * 8 * 4
+@@ -187,6 +208,7 @@ def dxbc_to_msl(payload, names, flags=None):
+     """payload = Unity code-entry payload (prefix + stripped DXBC). -> (msl, stderr)"""
+     idx = payload.find(b"DXBC")
+     assert idx >= 0, "no DXBC in payload"
++    from clip_distance import repair_clip_distances
+     chunks = parse_container(payload[idx:])
+     code_four = b"SHDR" if b"SHDR" in chunks else b"SHEX"
+     dcls = parse_dcls(chunks[code_four])
+@@ -196,6 +218,18 @@ def dxbc_to_msl(payload, names, flags=None):
+         if f in chunks:
+             order.append((f, chunks[f]))
+     full = assemble_dxbc(order)
++    import pathlib, hashlib
++    # Translator fixes must invalidate generated MSL as well as shader caches.
++    global _hlslcc_binary_digest
++    if '_hlslcc_binary_digest' not in globals():
++        _hlslcc_binary_digest = hashlib.sha256(pathlib.Path(HLSLCC).read_bytes()).digest()
++    digest = hashlib.sha256(full + str(flags).encode() + _hlslcc_binary_digest).hexdigest()
++    task_root = pathlib.Path(__file__).resolve().parents[4]
++    cache = task_root / 'runtime/hlslcc-cache'
++    cache.mkdir(exist_ok=True)
++    cached = cache / (digest + '.metal')
++    if cached.exists():
++        return repair_clip_distances(cached.read_text(), payload[idx:]), ''
+     import tempfile
+     with tempfile.NamedTemporaryFile(suffix=".dxbc", delete=False) as tf:
+         tf.write(full)
+@@ -204,8 +238,14 @@ def dxbc_to_msl(payload, names, flags=None):
+     r = subprocess.run(args, capture_output=True, text=True, timeout=60)
+     os.unlink(path)
+     if r.returncode != 0:
++        import pathlib, hashlib
++        output = task_root / 'reports'
++        output.mkdir(exist_ok=True)
++        (output / ('hlslcc-failure-' + hashlib.sha256(full).hexdigest()[:12] + '.dxbc')).write_bytes(full)
+         raise RuntimeError(f"hlslcc failed rc={r.returncode}: {r.stderr[:400]}")
+-    return r.stdout, r.stderr
++    source = repair_clip_distances(r.stdout, payload[idx:])
++    cached.write_text(source)
++    return source, r.stderr
+ 
+ if __name__ == "__main__":
+     import sys
+diff --git a/tools/rewrap/entrytools.py b/tools/rewrap/entrytools.py
+index bf105d1..5c478ca 100644
+--- a/tools/rewrap/entrytools.py
++++ b/tools/rewrap/entrytools.py
+@@ -40,11 +40,11 @@ def parse_blob(blob):
+ 
+ def serialize_blob(entries):
+     n = len(entries)
+-    table = struct.pack("<I", n)
++    table = [struct.pack("<I", n)]
+     off = 4 + 12 * n
+-    payloads = b""
++    payloads = []
+     for e in entries:
+-        table += struct.pack("<III", off, len(e["raw"]), e["seg"])
+-        payloads += e["raw"]
++        table.append(struct.pack("<III", off, len(e["raw"]), e["seg"]))
++        payloads.append(e["raw"])
+         off += len(e["raw"])
+-    return table + payloads
++    return b''.join(table + payloads)
+diff --git a/tools/rewrap/inject_custom_metal2.py b/tools/rewrap/inject_custom_metal2.py
+index d4d442c..b046478 100644
+--- a/tools/rewrap/inject_custom_metal2.py
++++ b/tools/rewrap/inject_custom_metal2.py
+@@ -180,7 +180,7 @@ def relayout_cb_structs(msl, offsets_by_slot, tag_for_log):
+             raise RuntimeError(f"{tag_for_log}: buffer({slot}) {inst} has no serialized CB")
+         serial, cbsize = offsets_by_slot[slot]
+         sm = structs[sname]
+-        placed, pads = [], []
++        placed, pads, scalar_arrays = [], [], []
+         orig_off = 0
+         for m in MEMBER_RE.finditer(sm.group(3)):
+             ty, nm, arr = m.group(1), m.group(2), int(m.group(3)) if m.group(3) else 0
+@@ -190,7 +190,11 @@ def relayout_cb_structs(msl, offsets_by_slot, tag_for_log):
+             orig_off = (orig_off + align - 1) & ~(align - 1)
+             key = nm[len(MTX_PREFIX):] if nm.startswith(MTX_PREFIX) else nm
+             if key in serial:
+-                placed.append((serial[key], ty, nm, arr))
++                if arr and ty in ('float','int','uint','bool'):
++                    placed.extend((serial[key]+16*j,ty,f'{nm}_Mac{j}',0) for j in range(arr))
++                    scalar_arrays.append((nm,arr))
++                else:
++                    placed.append((serial[key], ty, nm, arr))
+             elif re.search(re.escape(inst) + r"\s*\.\s*" + re.escape(nm) + r"\b", msl):
+                 # accessed but not in the serialized tables. In engine-layout CBs
+                 # (UnityPerDraw) these are real engine-written slots -> keep the
+@@ -203,7 +207,8 @@ def relayout_cb_structs(msl, offsets_by_slot, tag_for_log):
+         repacked = []           # (member, aligned type) -> reads need float2(...) back-conversion
+         for i, (off, ty, nm, arr) in enumerate(placed):
+             size, align = _msl_member_size(ty, arr)
+-            if off % align:
++            next_offset = placed[i + 1][0] if i + 1 < len(placed) else cbsize
++            if off % align or (not arr and ty.endswith('3') and next_offset < off + size):
+                 pty = None if arr else PACKED.get(ty)
+                 if pty is None or off % 4:
+                     raise RuntimeError(f"{tag_for_log}: {nm}@{off} violates align {align}")
+@@ -265,6 +270,13 @@ def relayout_cb_structs(msl, offsets_by_slot, tag_for_log):
+         # packed_* members are storage-only: convert reads back to the aligned vector type so
+         # every downstream use (swizzles, arithmetic) stays exactly what HLSLcc generated.
+         # `inst.` anchors the match, so the struct declaration itself is never rewritten.
++        for nm, arr in scalar_arrays:
++            pattern=re.escape(inst)+r'\s*\.\s*'+re.escape(nm)+r'\s*\[([^\]]+)\]'
++            def scalar_read(match):
++                index=match.group(1)
++                parts=[f'(({index})=={j}) ? {inst}.{nm}_Mac{j} : ' for j in range(arr-1)]
++                return '('+''.join(parts)+f'{inst}.{nm}_Mac{arr-1})'
++            msl=re.sub(pattern,scalar_read,msl)
+         for nm, aty in repacked:
+             msl = re.sub(r"\b" + re.escape(inst) + r"\s*\.\s*" + re.escape(nm) + r"\b",
+                          f"{aty}({inst}.{nm})", msl)
+@@ -309,11 +321,26 @@ def rewrite_vs_trailing_msl(trailing, msl, tag):
+ 
+ # ── per-shader conversion ────────────────────────────────────────────────────
+ 
+-def rewrap_shader_v2(d, name, do_compile):
++def widen_fragment_outputs(msl):
++    # D3D permits partial MRT writes. Metal's pipeline validates the declared
++    # vector width against the render target, even for unwritten channels.
++    narrow = list(re.finditer(r'\b(float|half)([123]?)\s+(SV_[Tt][Aa][Rr][Gg][Ee][Tt]\d+)\s*\[\[', msl))
++    if not narrow:
++        return msl
++    for match in narrow:
++        scalar, width, name = match.groups()
++        mask = 'xyzw'[:int(width or '1')]
++        msl = re.sub(r'\b'+scalar+width+r'(\s+'+name+r'\s*\[\[)', scalar+'4'+r'\1', msl)
++        msl = re.sub(r'\boutput\.'+name+r'\b(?!\s*\.)', 'output.'+name+'.'+mask, msl)
++    return msl.replace('Mtl_FragmentOut output;', 'Mtl_FragmentOut output = {};')
++
++
++def rewrap_shader_v2(d, name, do_compile, only_entries=None):
+     if list(d.get("platforms", [])) != [4]:
+         raise RuntimeError(f"{name}: platforms={list(d.get('platforms', []))}, expected [4]")
+     blob = decompress_blob(d, 0)
+     entries = parse_blob(blob)
++    original_entries = [e['raw'] for e in entries]
+     pf = d["m_ParsedForm"]
+     n_vs = n_fs = 0
+     converted = set()      # multi-pass shaders share blob entries across passes
+@@ -326,18 +353,23 @@ def rewrap_shader_v2(d, name, do_compile):
+                 pbi = prog.get("m_ParameterBlobIndices", [])
+                 for sp, t, i in flat_subs(prog):
+                     bi = sp["m_BlobIndex"]
++                    if only_entries is not None and bi not in only_entries:
++                        continue
+                     if bi in converted:
+                         continue
+                     converted.add(bi)
++                    if len(converted) % 500 == 0:
++                        print(f"{name}: {len(converted)} programs converted", flush=True)
+                     e = entries[bi]
+                     if e["type"] not in D3D_TO_METAL_ALL:
+                         raise RuntimeError(f"{name}: entry[{bi}] type {e['type']}")
+-                    pentry = parse_params_entry(entries[pbi[t][i]]["raw"])
++                    pentry = parse_params_entry(original_entries[pbi[t][i]])
+                     pe = parse_code_entry(e["raw"])
+                     names, offsets = enrich_names(ps, prog, pentry)
+                     msl, _ = dxbc_to_msl(pe["payload"], names, flags=HLSLCC_FLAGS)
+                     if e["type"] in FS_TYPES:
+                         msl = postprocess_fs(msl)
++                        msl = widen_fragment_outputs(msl)
+                         trailing = pe["trailing"]
+                         n_fs += 1
+                     else:
+@@ -345,7 +377,41 @@ def rewrap_shader_v2(d, name, do_compile):
+                         trailing = rewrite_vs_trailing_msl(pe["trailing"], msl,
+                                                            f"{name} e[{bi}]")
+                         n_vs += 1
++                    # HLSLcc compacts sparse texture and constant-buffer slots.
++                    # Restore D3D's serialized bindings before writing Metal.
++                    for register, texture_name in names['textures'].items():
++                        msl = re.sub(r'(>\s*' + re.escape(texture_name) +
++                                     r'\s*\[\[\s*texture\s*\()\d+(\)\s*\]\])',
++                                     lambda m: m.group(1)+str(register)+m.group(2), msl)
++                    for register, cb in names['cbs'].items():
++                        instance = cb['name'].replace('$', 'F')
++                        msl = re.sub(r'(&\s*' + re.escape(instance) +
++                                     r'\s*\[\[\s*buffer\()\d+(\)\s*\]\])',
++                                     lambda m: m.group(1)+str(register)+m.group(2), msl)
++                    # Read-only buffers follow all constant buffers in Metal.
++                    first_srv = max(names['cbs'], default=-1)+1
++                    for register, buffer_name in names.get('buffers',{}).items():
++                        msl = re.sub(r'(\*\s*'+re.escape(buffer_name)+
++                                     r'\s*\[\[\s*buffer\()\d+(\)\s*\]\])',
++                                     lambda m: m.group(1)+str(first_srv+register)+m.group(2), msl)
++                    for match in list(re.finditer(r'\*\s*(uav(\d+))\s*\[\[\s*buffer\((\d+)\)\s*\]\]',msl)):
++                        old=match.group(0)
++                        new=re.sub(r'buffer\(\d+\)',f'buffer({int(match.group(2))+2})',old)
++                        msl=msl.replace(old,new)
+                     msl = relayout_cb_structs(msl, offsets, f"{name} e[{bi}]")
++                    # Structured SRVs share Metal's buffer namespace with CBs.
++                    param_index = pbi[t][i]
++                    param_raw = bytearray(entries[param_index]['raw'])
++                    for resource in pentry.get('resources', []):
++                        if resource['kind'] != 2:
++                            continue
++                        match = re.search(r'\*\s*' + re.escape(resource['name']) +
++                                          r'\s*\[\[\s*buffer\((\d+)\)', msl)
++                        if match:
++                            # The Mac player's SetComputeBufferForShaderType
++                            # passes this index directly to the Metal encoder.
++                            struct.pack_into('<I', param_raw, resource['slot_offset'], int(match.group(1)))
++                    entries[param_index]['raw'] = bytes(param_raw)
+                     for tn, ti in msl_texture_indices(msl).items():
+                         reg = {v: k for k, v in names["textures"].items()}.get(tn)
+                         if reg is not None and reg != ti:
+diff --git a/tools/hlslcc/offline_glsl.cpp b/tools/hlslcc/offline_glsl.cpp
+new file mode 100644
+--- /dev/null
++++ b/tools/hlslcc/offline_glsl.cpp
+@@ -0,0 +1,14 @@
++#include "hlslcc.h"
++#include <cstdio>
++#include <cstdlib>
++#include <vector>
++class Refl : public HLSLccReflection {};
++int main(int argc,char**argv){
++ if(argc!=2)return 2;FILE*f=fopen(argv[1],"rb");if(!f)return 2;
++ fseek(f,0,SEEK_END);long n=ftell(f);fseek(f,0,SEEK_SET);std::vector<char>bytes(n);
++ if(fread(bytes.data(),1,n,f)!=(size_t)n)return 2;fclose(f);
++ GlExtensions ext={};GLSLCrossDependencyData deps;HLSLccSamplerPrecisionInfo precision;Refl refl;GLSLShader out;
++ unsigned flags=HLSLCC_FLAG_UNIFORM_BUFFER_OBJECT|HLSLCC_FLAG_UNIFORM_BUFFER_OBJECT_WITH_INSTANCE_NAME|HLSLCC_FLAG_TRANSLATE_MATRICES|HLSLCC_FLAG_REMOVE_UNUSED_GLOBALS|HLSLCC_FLAG_DISABLE_FASTMATH;
++ if(!TranslateHLSLFromMem(bytes.data(),flags,LANG_440,&ext,&deps,precision,refl,&out))return 1;
++ fputs(out.sourceCode.c_str(),stdout);return 0;
++}
+diff --git a/tools/rewrap/clip_distance.py b/tools/rewrap/clip_distance.py
+new file mode 100644
+--- /dev/null
++++ b/tools/rewrap/clip_distance.py
+@@ -0,0 +1,55 @@
++"""Restore every DXBC clip-distance component in HLSLcc's Metal epilogue.
++
++HLSLcc uses the width of SV_ClipDistance0 for every semantic. A scalar
++SV_ClipDistance0 followed by float4 SV_ClipDistance1 therefore loses y/z/w.
++The Windows output signature gives the authoritative component masks.
++"""
++import re
++import struct
++
++
++def output_components(dxbc):
++    count = struct.unpack_from('<I', dxbc, 28)[0]
++    for offset in struct.unpack_from('<' + 'I' * count, dxbc, 32):
++        tag = dxbc[offset:offset + 4]
++        if tag not in (b'OSGN', b'OSG5', b'OSG1'):
++            continue
++        length = struct.unpack_from('<I', dxbc, offset + 4)[0]
++        signature = dxbc[offset + 8:offset + 8 + length]
++        rows = struct.unpack_from('<I', signature)[0]
++        stride = 24 if tag == b'OSGN' else 28 if tag == b'OSG5' else 32
++        prefix = 0 if tag == b'OSGN' else 4
++        result = []
++        for row in range(rows):
++            base = 8 + row * stride + prefix
++            name_offset, semantic, system, scalar, register = struct.unpack_from('<5I', signature, base)
++            mask = signature[base + 20] & 15
++            if system == 2:
++                result.extend((semantic, component) for component in range(4) if mask & (1 << component))
++        return sorted(result)
++    return []
++
++
++def repair_clip_distances(msl, dxbc):
++    declaration = re.search(r'\bfloat\s+mtl_ClipDistance\s*\[\[\s*clip_distance\s*\]\]\s*(?:\[(\d+)\])?\s*;', msl)
++    if not declaration:
++        return msl
++    components = output_components(dxbc)
++    size = int(declaration[1] or 1)
++    if len(components) != size:
++        raise ValueError(f'Metal declares {size} clip distances, DXBC declares {len(components)}')
++    phases = set(re.findall(r'\bfloat4\s+phase(\d+)_ClipDistance\d+\s*;', msl))
++    if len(phases) != 1:
++        raise ValueError('Expected one vertex phase for clip-distance outputs')
++    phase = phases.pop()
++    assignments = []
++    for index, (semantic, component) in enumerate(components):
++        variable = f'phase{phase}_ClipDistance{semantic}'
++        if not re.search(r'\bfloat4\s+' + variable + r'\s*;', msl):
++            raise ValueError(f'Missing translated clip-distance temporary {variable}')
++        destination = f'output.mtl_ClipDistance[{index}]' if size > 1 else 'output.mtl_ClipDistance'
++        assignments.append(f'    {destination} = {variable}.{"xyzw"[component]};\n')
++    msl = re.sub(r'^[ \t]*output\.mtl_ClipDistance(?:\[\d+\])?\s*=[^;]*;[ \t]*\n', '', msl, flags=re.M)
++    if msl.count('return output;') != 1:
++        raise ValueError('Expected a single vertex return for clip-distance epilogue')
++    return msl.replace('    return output;', ''.join(assignments) + '    return output;')

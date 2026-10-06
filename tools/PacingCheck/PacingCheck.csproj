@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net8.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings></PropertyGroup><ItemGroup><Compile Include="../PortProbe/FrameDeadline.cs" Link="FrameDeadline.cs" /><Compile Include="../PortProbe/PortPaths.cs" Link="PortPaths.cs"/></ItemGroup></Project>

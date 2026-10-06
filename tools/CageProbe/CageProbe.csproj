@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion><AssemblyName>PortProbe</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.ParticleSystemModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.PhysicsModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UI"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.UI.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.UIModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.UIModule.dll</HintPath></Reference>
+    <Reference Include="Unity.TextMeshPro"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/Unity.TextMeshPro.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.InputLegacyModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.InputLegacyModule.dll</HintPath></Reference>
+<Reference Include="UnityEngine.JSONSerializeModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.JSONSerializeModule.dll</HintPath></Reference>
+<Reference Include="Newtonsoft.Json"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/Newtonsoft.Json.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

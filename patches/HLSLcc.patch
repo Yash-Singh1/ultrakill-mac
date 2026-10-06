@@ -1,0 +1,48 @@
+diff --git a/src/toMetalInstruction.cpp b/src/toMetalInstruction.cpp
+index a4c0645..16763cf 100644
+--- a/src/toMetalInstruction.cpp
++++ b/src/toMetalInstruction.cpp
+@@ -908,12 +908,18 @@ void ToMetal::GetResInfoData(Instruction* psInst, int index, int destElem)
+     bstring glsl = *psContext->currentGLSLString;
+     int numParenthesis = 0;
+     const RESINFO_RETURN_TYPE eResInfoReturnType = psInst->eResInfoReturnType;
++    // Shader Model 4 resinfo can omit the extended resource-dimension token.
++    // The texture declaration still supplies its dimension. Treating UNKNOWN
++    // as zero dimensions produces zero widths/heights and division by zero.
++    const RESOURCE_DIMENSION eResDim = psInst->eResDim == RESOURCE_DIMENSION_UNKNOWN
++        ? psContext->psShader->aeResourceDims[psInst->asOperands[2].ui32RegisterNumber]
++        : psInst->eResDim;
+ 
+     psContext->AddIndentation();
+     AddOpAssignToDestWithMask(&psInst->asOperands[0], eResInfoReturnType == RESINFO_INSTRUCTION_RETURN_UINT ? SVT_UINT : SVT_FLOAT, 1, psInst->ui32PreciseMask, numParenthesis, 1 << destElem);
+ 
+     const char *metalGetters[] = { ".get_width(", ".get_height(", ".get_depth(", ".get_num_mip_levels()" };
+-    int dim = GetNumTextureDimensions(psInst->eResDim);
++    int dim = GetNumTextureDimensions(eResDim);
+     if (dim < (index + 1) && index != 3)
+     {
+         bcatcstr(glsl, eResInfoReturnType == RESINFO_INSTRUCTION_RETURN_UINT ? "uint(0)" : "0.0");
+@@ -931,9 +937,9 @@ void ToMetal::GetResInfoData(Instruction* psInst, int index, int destElem)
+             numParenthesis++;
+         }
+         glsl << TranslateOperand(&psInst->asOperands[2], TO_FLAG_NAME_ONLY);
+-        if ((index == 1 && psInst->eResDim == RESOURCE_DIMENSION_TEXTURE1DARRAY) ||
+-            (index == 2 && (psInst->eResDim == RESOURCE_DIMENSION_TEXTURE2DARRAY ||
+-                            psInst->eResDim == RESOURCE_DIMENSION_TEXTURE2DMSARRAY)))
++        if ((index == 1 && eResDim == RESOURCE_DIMENSION_TEXTURE1DARRAY) ||
++            (index == 2 && (eResDim == RESOURCE_DIMENSION_TEXTURE2DARRAY ||
++                            eResDim == RESOURCE_DIMENSION_TEXTURE2DMSARRAY)))
+         {
+             bcatcstr(glsl, ".get_array_size()");
+         }
+@@ -943,8 +949,8 @@ void ToMetal::GetResInfoData(Instruction* psInst, int index, int destElem)
+ 
+             if (index < 3)
+             {
+-                if (psInst->eResDim != RESOURCE_DIMENSION_TEXTURE2DMS &&
+-                    psInst->eResDim != RESOURCE_DIMENSION_TEXTURE2DMSARRAY)
++                if (eResDim != RESOURCE_DIMENSION_TEXTURE2DMS &&
++                    eResDim != RESOURCE_DIMENSION_TEXTURE2DMSARRAY)
+                     glsl << TranslateOperand(&psInst->asOperands[1], TO_FLAG_INTEGER); //mip level
+ 
+                 bcatcstr(glsl, ")");

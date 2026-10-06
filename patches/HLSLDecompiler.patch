@@ -1,0 +1,295 @@
+diff --git a/HLSLDecompiler/DecompileHLSL.cpp b/HLSLDecompiler/DecompileHLSL.cpp
+index b0078a2..56d0536 100644
+--- a/HLSLDecompiler/DecompileHLSL.cpp
++++ b/HLSLDecompiler/DecompileHLSL.cpp
+@@ -26,11 +26,11 @@
+ 
+ #include "DecompileHLSL.h"
+ 
+-#include "BinaryDecompiler\include\pstdint.h"
+-#include "BinaryDecompiler\internal_includes\structs.h"
+-#include "BinaryDecompiler\internal_includes\decode.h"
++#include "BinaryDecompiler/include/pstdint.h"
++#include "BinaryDecompiler/internal_includes/structs.h"
++#include "BinaryDecompiler/internal_includes/decode.h"
+ 
+-#include <excpt.h>
++// Native build uses C++ exceptions; no Windows SEH.
+ 
+ #include "assert.h"
+ #include "log.h"
+@@ -302,7 +302,7 @@ public:
+ 	{
+ 		string interpolation = "";
+ 
+-		for each(Declaration declaration in shader->psDecl)
++		for (const Declaration& declaration : shader->psDecl)
+ 		{
+ 			if (declaration.eOpcode == OPCODE_DCL_INPUT_PS)
+ 			{
+@@ -674,8 +674,10 @@ public:
+ 				name, (int)sizeof(name), type, (int)sizeof(type), format, (int)sizeof(format), dim, (int)sizeof(dim), 
+ 				bind, (int)sizeof(bind), &arraySize);
+ 
+-			if (numRead != 6)
+-				logDecompileError("Error parsing resource declaration: " + string(c + pos, 80));
++			if (numRead != 6) {
++                if (!strncmp(c+pos,"//\n",3) || !strncmp(c+pos,"//\r",3)) break;
++                logDecompileError("Error parsing resource declaration: " + string(c + pos, 80)); return;
++            }
+ 
+ 			int slot = 0;
+ 			for (int i = 0; i < sizeof(bind) && bind[i]; ++i)
+@@ -1239,7 +1241,7 @@ public:
+ 					else if (e.bt == DT_bool)
+ 					{
+ 						unsigned int bHex = 0;
+-						numRead = sscanf_s(c + pos, "// = 0x%lx", &bHex);
++						numRead = sscanf_s(c + pos, "// = 0x%x", &bHex);
+ 						NextLine(c, pos, size);
+ 						string bString = (bHex == 0) ? "false" : "true";
+ 						if (structLevel < 0)
+@@ -1284,7 +1286,7 @@ public:
+ 					else if (e.bt == DT_float || e.bt == DT_float2 || e.bt == DT_float3 || e.bt == DT_float4)
+ 					{
+ 						float v[4] = { 0, 0, 0, 0 };
+-						numRead = sscanf_s(c + pos, "// = 0x%lx 0x%lx 0x%lx 0x%lx", (unsigned long*)v + 0, (unsigned long*)v + 1, (unsigned long*)v + 2, (unsigned long*)v + 3);
++						numRead = sscanf_s(c + pos, "// = 0x%x 0x%x 0x%x 0x%x", (uint32_t*)v + 0, (uint32_t*)v + 1, (uint32_t*)v + 2, (uint32_t*)v + 3);
+ 						NextLine(c, pos, size);
+ 
+ 						if (structLevel < 0)
+@@ -1313,7 +1315,7 @@ public:
+ 						float v[16];
+ 						for (size_t i = 0; i < 4; i++)
+ 						{
+-							numRead = sscanf_s(c + pos, "//%*[ =]0x%lx 0x%lx 0x%lx 0x%lx", (unsigned long*)&v[i * 4 + 0], (unsigned long*)&v[i * 4 + 1], (unsigned long*)&v[i * 4 + 2], (unsigned long*)&v[i * 4 + 3]);
++							numRead = sscanf_s(c + pos, "//%*[ =]0x%x 0x%x 0x%x 0x%x", (uint32_t*)&v[i * 4 + 0], (uint32_t*)&v[i * 4 + 1], (uint32_t*)&v[i * 4 + 2], (uint32_t*)&v[i * 4 + 3]);
+ 							if (numRead != 4)
+ 							{
+ 								logDecompileError("Default values for float4x4 not read correctly, n:" + numRead);
+@@ -1459,7 +1461,7 @@ public:
+ 						isInt = isInt && (floor(args[idx[i]]) == args[idx[i]]);
+ 					if (isInt && useInt)
+ 					{
+-						sprintf(right2, "int%Id(", pos);
++						sprintf(right2, "int%zd(", pos);
+ 						for (int i = 0; idx[i] >= 0 && i < 4; ++i)
+ 							sprintf_s(right2 + strlen(right2), sizeof(right2) - strlen(right2), "%d,", int(args[idx[i]]));
+ 						right2[strlen(right2) - 1] = 0;
+@@ -1467,7 +1469,7 @@ public:
+ 					}
+ 					else
+ 					{
+-						sprintf(right2, "float%Id(", pos);
++						sprintf(right2, "float%zd(", pos);
+ 						for (int i = 0; idx[i] >= 0 && i < 4; ++i)
+ 							sprintf_s(right2 + strlen(right2), sizeof(right2) - strlen(right2), "%.9g,", args[idx[i]]);
+ 						right2[strlen(right2) - 1] = 0;
+@@ -2133,7 +2135,7 @@ public:
+ 			if (size == 1)
+ 				_snprintf_s(buffer, opcodeSize, opcodeSize, "(int)%s", target);
+ 			else
+-				_snprintf_s(buffer, opcodeSize, opcodeSize, "(int%Id)%s", size, target);
++				_snprintf_s(buffer, opcodeSize, opcodeSize, "(int%zd)%s", size, target);
+ 			strcpy_s(target, opcodeSize, buffer);
+ 		}
+ 		return target;
+@@ -2176,7 +2178,7 @@ public:
+ 			if (size == 1)
+ 				_snprintf_s(buffer, opcodeSize, opcodeSize, "(uint)%s", target);
+ 			else
+-				_snprintf_s(buffer, opcodeSize, opcodeSize, "(uint%Id)%s", size, target);
++				_snprintf_s(buffer, opcodeSize, opcodeSize, "(uint%zd)%s", size, target);
+ 			strcpy_s(target, opcodeSize, buffer);
+ 		}
+ 		return target;
+@@ -4879,7 +4881,7 @@ public:
+ 					}
+ 
+ 						// New variant found in Mordor.  Example:
+-						//   gInstanceBuffer                   texture?struct         r/o  ?0      ?1
++						//   gInstanceBufferÂ Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â Â  texture?structÂ Â Â Â Â Â Â Â  r/oÂ Â ?0Â Â Â Â Â Â ?1
+ 						//   dcl_resource_structured t0, 16 
+ 						//   ld_structured_indexable(structured_buffer, stride=16)(mixed,mixed,mixed,mixed) r1.xyzw, r0.x, l(0), t0.xyzw
+ 						// becomes:
+@@ -5030,10 +5032,10 @@ public:
+ 						Operand texture = instr->asOperands[2];
+ 						RESINFO_RETURN_TYPE returnType = instr->eResInfoReturnType;
+ 						int texReg = texture.ui32RegisterNumber;
+-						ResourceBinding bindInfo;
++						ResourceBinding bindInfo{};
+ 						ResourceBinding *bindInfoPtr = &bindInfo;
+ 
+-						memset(&bindInfo, 0, sizeof(bindInfo));
++						// Value initialization preserves the std::string member.
+ 						int bindstate = GetResourceFromBindingPoint(RTYPE_TEXTURE, texReg, shader->sInfo, &bindInfoPtr);
+ 						bool bindStripped = (bindstate == 0);
+ 
+@@ -5102,12 +5104,12 @@ public:
+ 							//	out3 = "fDst0.x";
+ 							//}
+ 
+-							if (bindInfoPtr->eDimension == REFLECT_RESOURCE_DIMENSION_TEXTURE2D)
++							if (bindInfoPtr->eDimension == REFLECT_RESOURCE_DIMENSION_TEXTURE2D || bindInfoPtr->eDimension == REFLECT_RESOURCE_DIMENSION_TEXTURECUBE)
+ 							{
+ 								if (returnType == RESINFO_INSTRUCTION_RETURN_UINT)
+-									sprintf(buffer, "  %s.GetDimensions(0, uiDest.x, uiDest.y, uiDest.z);\n", bindInfoPtr->Name.c_str());
++									sprintf(buffer, "  uiDest.z = 0; %s.GetDimensions(0, uiDest.x, uiDest.y, uiDest.w);\n", bindInfoPtr->Name.c_str());
+ 								else
+-									sprintf(buffer, "  %s.GetDimensions(0, fDest.x, fDest.y, fDest.z);\n", bindInfoPtr->Name.c_str());
++									sprintf(buffer, "  fDest.z = 0; %s.GetDimensions(0, fDest.x, fDest.y, fDest.w);\n", bindInfoPtr->Name.c_str());
+ 								appendOutput(buffer);
+ 								unknownVariant = false;
+ 							}
+diff --git a/log.h b/log.h
+index 6e64575..b7d83f3 100644
+--- a/log.h
++++ b/log.h
+@@ -17,30 +17,17 @@ extern bool gLogDebug;
+ // logging framework.
+ 
+ #define LogInfo(fmt, ...) \
+-	do { if (LogFile) fprintf(LogFile, fmt, __VA_ARGS__); } while (0)
++	do { if (LogFile) fprintf(LogFile, fmt, ##__VA_ARGS__); } while (0)
+ #define vLogInfo(fmt, va_args) \
+ 	do { if (LogFile) vfprintf(LogFile, fmt, va_args); } while (0)
+ #define LogInfoW(fmt, ...) \
+-	do { if (LogFile) fwprintf(LogFile, fmt, __VA_ARGS__); } while (0)
++	do { if (LogFile) fwprintf(LogFile, fmt, ##__VA_ARGS__); } while (0)
+ 
+ #define LogDebug(fmt, ...) \
+-	do { if (gLogDebug) LogInfo(fmt, __VA_ARGS__); } while (0)
++	do { if (gLogDebug) LogInfo(fmt, ##__VA_ARGS__); } while (0)
+ #define vLogDebug(fmt, va_args) \
+ 	do { if (gLogDebug) vLogInfo(fmt, va_args); } while (0)
+ #define LogDebugW(fmt, ...) \
+-	do { if (gLogDebug) LogInfoW(fmt, __VA_ARGS__); } while (0)
+-
+-static string LogTime()
+-{
+-	string timeStr;
+-	char cTime[32];
+-	tm timestruct;
+-
+-	time_t ltime = time(0);
+-	localtime_s(&timestruct, &ltime);
+-	asctime_s(cTime, sizeof(cTime), &timestruct);
+-
+-	timeStr = cTime;
+-	return timeStr;
+-}
++	do { if (gLogDebug) LogInfoW(fmt, ##__VA_ARGS__); } while (0)
+ 
++static string LogTime() { return "deterministic native build\n"; }
+diff --git a/portable/build.sh b/portable/build.sh
+new file mode 100755
+--- /dev/null
++++ b/portable/build.sh
+@@ -0,0 +1,9 @@
++#!/bin/sh
++set -eu
++cd "$(dirname "$0")/.."
++clang++ -std=c++17 -O2 -Wno-deprecated-declarations -Wno-format \
++  -Wno-shift-negative-value -Wno-tautological-constant-out-of-range-compare \
++  -include portable/compat.h -I. -IBinaryDecompiler -IBinaryDecompiler/include \
++  -IBinaryDecompiler/internal_includes HLSLDecompiler/DecompileHLSL.cpp \
++  BinaryDecompiler/decode.cpp BinaryDecompiler/reflect.cpp portable/main.cpp \
++  -o portable/hlsl-decompiler
+diff --git a/portable/compat.h b/portable/compat.h
+new file mode 100644
+--- /dev/null
++++ b/portable/compat.h
+@@ -0,0 +1,65 @@
++#pragma once
++#include <array>
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
++#include <cmath>
++#include <string>
++#include <type_traits>
++#include <vector>
++#include <algorithm>
++#include <strings.h>
++
++// Windows secure CRT overloads, with explicit bounds for string scans.
++template<typename... Args> int sprintf_s(char* out,size_t size,const char* format,Args... args){return snprintf(out,size,format,args...);}
++template<size_t N,typename... Args> int sprintf_s(char (&out)[N],const char* format,Args... args){return snprintf(out,N,format,args...);}
++template<typename... Args> int _snprintf_s(char* out,size_t size,size_t count,const char* format,Args... args){return snprintf(out,std::min(size,count+1),format,args...);}
++inline int strcpy_s(char* out,size_t size,const char* input){if(strlen(input)>=size){if(size)*out=0;return 1;}memcpy(out,input,strlen(input)+1);return 0;}
++template<size_t N> int strcpy_s(char (&out)[N],const char* input){return strcpy_s(out,N,input);}
++inline int strcat_s(char* out,size_t size,const char* input){size_t length=strlen(out);if(length>=size)return 1;return strcpy_s(out+length,size-length,input);}
++template<size_t N> int strcat_s(char (&out)[N],const char* input){return strcat_s(out,N,input);}
++#define _stricmp strcasecmp
++#define _strnicmp strncasecmp
++#define _isnan std::isnan
++#define _finite std::isfinite
++
++struct ScanArgument{void* pointer;size_t capacity;bool isPointer;};
++template<typename T> ScanArgument scanArgument(T value){
++    if constexpr(std::is_pointer_v<T>)return{(void*)value,0,true};
++    else return{nullptr,(size_t)value,false};
++}
++template<typename... Args> int sscanf_s(const char* input,const char* format,Args... args){
++    std::array<ScanArgument,sizeof...(Args)> arguments={scanArgument(args)...};
++    std::array<void*,32> pointers={};size_t count=0,index=0;
++    std::string bounded;
++    for(size_t i=0;format[i];){
++        if(format[i]!='%'){bounded+=format[i++];continue;}
++        size_t start=i++;if(format[i]=='%'){bounded+="%%";i++;continue;}
++        bool suppressed=format[i]=='*';if(suppressed)i++;
++        size_t widthStart=i;while(format[i]>='0'&&format[i]<='9')i++;
++        bool hasWidth=i>widthStart;
++        while(format[i]&&strchr("hlLjztI",format[i]))i++;
++        char conversion=format[i++];
++        if(conversion=='['){if(format[i]=='^')i++;if(format[i]==']')i++;while(format[i]&&format[i]!=']')i++;if(format[i])i++;}
++        bool string=conversion=='s'||conversion=='c'||conversion=='[';
++        if(!suppressed){
++            if(index>=arguments.size()||!arguments[index].isPointer||count>=pointers.size())return EOF;
++            pointers[count++]=arguments[index++].pointer;
++        }
++        size_t capacity=0;
++        if(!suppressed&&string){
++            if(index>=arguments.size()||arguments[index].isPointer)return EOF;
++            capacity=arguments[index++].capacity;
++            if(capacity==0)return EOF;
++        }
++        if(string&&!suppressed&&!hasWidth&&conversion!='c'){
++            bounded.append(format+start,widthStart-start);
++            bounded+=std::to_string(capacity-1);
++            bounded.append(format+widthStart,i-widthStart);
++        }else bounded.append(format+start,i-start);
++    }
++    if(count>20)return EOF;
++    return sscanf(input,bounded.c_str(),pointers[0],pointers[1],pointers[2],pointers[3],pointers[4],pointers[5],pointers[6],pointers[7],pointers[8],pointers[9],pointers[10],pointers[11],pointers[12],pointers[13],pointers[14],pointers[15],pointers[16],pointers[17],pointers[18],pointers[19]);
++}
++
++inline int strncpy_s(char* out,size_t size,const char* input,size_t count){if(count>=size){if(size)*out=0;return 1;}size_t n=std::min(count,strlen(input));memcpy(out,input,n);out[n]=0;return 0;}
+diff --git a/portable/main.cpp b/portable/main.cpp
+new file mode 100644
+--- /dev/null
++++ b/portable/main.cpp
+@@ -0,0 +1,23 @@
++#include "HLSLDecompiler/DecompileHLSL.h"
++#include <fstream>
++#include <iostream>
++#include <iterator>
++#include <cstdio>
++#include <vector>
++FILE* LogFile=stderr;
++bool gLogDebug=false;
++int main(int argc,char**argv){
++    if(argc!=4){fprintf(stderr,"usage: hlsl-decompiler DXBC REFLECTED_ASM OUTPUT_HLSL\n");return 2;}
++    std::ifstream bytefile(argv[1],std::ios::binary),asmfile(argv[2]);
++    if(!bytefile||!asmfile)return 3;
++    std::vector<char> bytes((std::istreambuf_iterator<char>(bytefile)),{});
++    std::string assembly((std::istreambuf_iterator<char>(asmfile)),{});
++    if(bytes.size()<32||memcmp(bytes.data(),"DXBC",4))return 4;
++    ParseParameters params{};params.bytecode=bytes.data();params.decompiled=assembly.c_str();params.decompiledSize=assembly.size();
++    params.StereoParamsReg=params.IniParamsReg=-1;
++    bool patched=false,error=false;std::string profile;
++    auto result=DecompileBinaryHLSL(params,patched,profile,error);
++    std::ofstream out(argv[3]);out<<result;
++    if(result.empty()||error)return 5;
++    fprintf(stderr,"%s\n",profile.c_str());return 0;
++}

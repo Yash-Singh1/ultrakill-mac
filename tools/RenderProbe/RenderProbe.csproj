@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion><AssemblyName>PortProbe</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.ParticleSystemModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>../../ULTRAKILL.app/Contents/Resources/Data/Managed/UnityEngine.PhysicsModule.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>
