@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>FraudFixtureCapture</AssemblyName>
+    <GameManagedPath>$(MSBuildThisFileDirectory)../../ULTRAKILL.app/Contents/Resources/Data/Managed</GameManagedPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp"><HintPath>$(GameManagedPath)/Assembly-CSharp.dll</HintPath></Reference>
+    <Reference Include="Unity.Collections"><HintPath>$(GameManagedPath)/Unity.Collections.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(GameManagedPath)/UnityEngine.CoreModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.JSONSerializeModule"><HintPath>$(GameManagedPath)/UnityEngine.JSONSerializeModule.dll</HintPath></Reference>
+    <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(GameManagedPath)/UnityEngine.ImageConversionModule.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

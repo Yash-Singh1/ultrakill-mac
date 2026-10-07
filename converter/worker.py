@@ -186,7 +186,7 @@ def convert(source, output, import_saves=False, payload=PAYLOAD):
         info_path.write_bytes(plistlib.dumps(info))
         shutil.copy2(payload/'GameLauncher',contents/'MacOS/ULTRAKILL')
         (contents/'MacOS/ULTRAKILL').chmod(0o755)
-        report = dict(config, unity_version='2022.3.29f1', architectures=['arm64','x86_64'], minimum_macos='11.0', shaders_converted=converted_count, input_verified=True, patch_pack_version=1)
+        report = dict(config, unity_version='2022.3.29f1', architectures=['arm64','x86_64'], minimum_macos='11.0', shaders_converted=converted_count, input_verified=True, patch_pack_version=1, portal_visibility_cache=profile.get('portal_visibility_cache',False))
         (contents/'Resources/conversion-report.json').write_text(json.dumps(report,indent=2)+'\n')
         emit(93, 'Signing the app bundle')
         subprocess.run(['/usr/bin/codesign','--force','--deep','--sign','-',str(app)], check=True, stdout=sys.stderr)

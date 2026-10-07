@@ -6,6 +6,7 @@ import bsdiff4, UnityPy
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tools'))
 from game_source import resolve_source
+from portal_support import supports_portal_cache
 from scan_source_shaders import scan
 from make_universal import native_files
 import convert_metal as cm
@@ -33,6 +34,15 @@ def clone(source,dest):
     dest.parent.mkdir(parents=True,exist_ok=True)
     run('/bin/cp','-cR',source,dest)
 
+def runtime_fingerprint():
+    inputs=[ROOT/'tools/burst_support.py',ROOT/'tools/steam_support.py',ROOT/'tools/portal_support.py',Path(__file__)]
+    for project in ['PortProbe','BloodRenderer','AssemblyPatcher','BloodLifetimePatch','FraudPatch','SteamPatcher','BurstHost']:
+        inputs.extend(p for p in (ROOT/'tools'/project).rglob('*') if p.suffix in ['.cs','.csproj'] and not any(part in ['bin','obj'] for part in p.parts))
+    h=hashlib.sha256()
+    for path in sorted(set(inputs)):
+        h.update(str(path.relative_to(ROOT)).encode());h.update(b'\0');h.update(path.read_bytes())
+    return h.hexdigest()
+
 def template():
     src=ROOT/'ULTRAKILL.app';dst=OUT/'template.app'
     if dst.exists():return
@@ -51,7 +61,9 @@ def template():
 def profile(source,label):
     source=resolve_source(source);data=source/'ULTRAKILL_Data'
     identity=filehash(data/'Managed/Assembly-CSharp.dll');cache=WORK/(identity+'.json')
-    if cache.exists():return json.loads(cache.read_text())
+    cached=json.loads(cache.read_text()) if cache.exists() else None
+    fingerprint=runtime_fingerprint()
+    if cached and cached.get('runtime_fingerprint')==fingerprint:return cached
     print('Preparing',label,flush=True)
     app=WORK/identity/'ULTRAKILL.app';managed=app/'Contents/Resources/Data/Managed'
     if app.exists():shutil.rmtree(app)
@@ -60,13 +72,17 @@ def profile(source,label):
     (app/'Contents/Frameworks').mkdir();(app/'Contents/MacOS').mkdir()
     helpers=OUT/'helpers'/identity;helpers.mkdir(parents=True,exist_ok=True)
     prop='-p:GameManagedPath='+str(managed)
+    portal_cache=supports_portal_cache(data/'Managed')
     for project,dll in [('PortProbe','PortProbe.dll'),('BloodRenderer','MacBloodRenderer.dll')]:
-        run('dotnet','build',ROOT/'tools'/project,'--configuration','Release','--verbosity','quiet',prop)
+        run('dotnet','build',ROOT/'tools'/project,'--configuration','Release','--verbosity','quiet',prop,*(['-p:EnablePortalOptimization='+str(portal_cache).lower()] if project=='PortProbe' else []))
         shutil.copy2(ROOT/'tools'/project/'bin/Release/netstandard2.1'/dll,helpers/dll)
         shutil.copy2(helpers/dll,managed/dll)
     run('dotnet','run','--project',ROOT/'tools/AssemblyPatcher','--configuration','Release','--',data/'Managed/Assembly-CSharp.dll',managed/'Assembly-CSharp.dll')
     run('dotnet','run','--project',ROOT/'tools/BloodLifetimePatch','--configuration','Release','--',managed/'Assembly-CSharp.dll',managed/'lifetime.dll')
     (managed/'lifetime.dll').replace(managed/'Assembly-CSharp.dll')
+    if portal_cache:
+        run('dotnet','run','--project',ROOT/'tools/FraudPatch','--configuration','Release','--',managed/'Assembly-CSharp.dll',managed/'portals.dll','--portal-sync-timing','--portal-async-visibility','--portal-visibility-cache')
+        (managed/'portals.dll').replace(managed/'Assembly-CSharp.dll')
     install_burst(app)
     shutil.copy2(app/'Contents/Plugins/lib_burst_generated.bundle',helpers/'lib_burst_generated.bundle')
     install_steam(app,source,ROOT/'runtime/steamworks/libsteam_api.dylib')
@@ -82,6 +98,14 @@ def profile(source,label):
     binary={}
     for rel in ['Managed/Assembly-CSharp.dll','Managed/Facepunch.Steamworks.Win64.dll','globalgamemanagers']:
         binary[rel]=delta((data/rel).read_bytes(),(app/'Contents/Resources/Data'/rel).read_bytes(),force_delta=True)
+    if cached:
+        # Runtime fixes can change without the verified input or shader pack
+        # changing. Refresh their helpers and deltas rather than returning stale
+        # assemblies or regenerating the entire shader pack.
+        cached.update(binary_patches=binary,runtime_fingerprint=fingerprint,portal_visibility_cache=portal_cache)
+        cache.write_text(json.dumps(cached,indent=2)+'\n')
+        shutil.rmtree(app)
+        return cached
     inventory=WORK/(identity+'-shaders.json')
     if not inventory.exists():scan(source,inventory)
     rows=json.loads(inventory.read_text())
@@ -111,7 +135,10 @@ def profile(source,label):
         del env;gc.collect()
     files={str(p.relative_to(data)):filehash(p) for p in sorted(data.rglob('*')) if p.is_file()}
     p=dict(name=label,assembly_sha256=identity,files=files,binary_patches=binary,helpers=str(helpers.relative_to(OUT)),shader_files=shader_files,shader_count=len(names),universal_binaries=[str(p) for p in native_files(OUT/'template.app')]+['Contents/Plugins/lib_burst_generated.bundle'])
+    p['runtime_fingerprint']=fingerprint
+    p['portal_visibility_cache']=portal_cache
     cache.write_text(json.dumps(p,indent=2)+'\n')
+    shutil.rmtree(app)
     return p
 
 def main():

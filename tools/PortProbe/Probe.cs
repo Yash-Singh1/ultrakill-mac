@@ -33,6 +33,9 @@ namespace ULTRAKILL.MacPort
             diagnostics.AddComponent<FraudWorkers>();
             if (Environment.GetEnvironmentVariable("ULTRAKILL_MAC_FRAUD_CONTROL") != null)
                 JobTuning.Install(diagnostics);
+#if FRAUD_TEST_TOOLS || PORTAL_OPTIMIZATION
+            PortalOptimization.Install(diagnostics);
+#endif
 #if FRAUD_TEST_TOOLS
             if (Environment.GetEnvironmentVariable("ULTRAKILL_MAC_BLOOD_TRANSITION") != null)
                 diagnostics.AddComponent<BloodTransitionCheck>();

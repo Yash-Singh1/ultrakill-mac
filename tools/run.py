@@ -66,6 +66,8 @@ def main():
         command += ["-batchmode", "-nographics"]
     elif args.offscreen:
         command += ["-batchmode"]
+        if os.environ.get("ULTRAKILL_MAC_FRAUD_BENCH") == "1":
+            command += ["-force-gfx-mt"]
     environment = os.environ.copy()
     environment.pop("ULTRAKILL_MAC_TEST_MUTE", None)
     if args.mute or args.headless or args.isolated_profile or args.transition_probe:
@@ -115,9 +117,11 @@ def main():
         print(f"PID {process.pid}; log {log}", flush=True)
         if args.detach:
             return
+        timed_out = False
         try:
             process.wait(timeout=args.seconds or None)
         except subprocess.TimeoutExpired:
+            timed_out = True
             process.terminate()
             try:
                 process.wait(timeout=10)
@@ -125,6 +129,8 @@ def main():
                 process.kill()
                 process.wait()
         print(f"Exit {process.returncode}")
+        if not timed_out and process.returncode:
+            raise SystemExit(process.returncode if process.returncode > 0 else 128 - process.returncode)
 
 
 if __name__ == "__main__":

@@ -45,7 +45,7 @@ namespace ULTRAKILL.MacPort
             rect.anchorMin = rect.anchorMax = new Vector2(0, 1);
             rect.pivot = new Vector2(0, 1);
             rect.anchoredPosition = new Vector2(12, -10);
-            rect.sizeDelta = new Vector2(300, 36);
+            rect.sizeDelta = new Vector2(1000, 105);
             label.text = "FPS ...";
             sampleStart = Time.realtimeSinceStartupAsDouble;
         }
@@ -59,6 +59,9 @@ namespace ULTRAKILL.MacPort
             if (elapsed < 0.25) return;
             float fps = (float)(frames / elapsed);
             label.SetText("{0:0} FPS  {1:1} ms", fps, 1000f / fps);
+#if FRAUD_TEST_TOOLS
+            if(PortalOptimization.Installed) label.text += "\n" + PortalOptimization.Caption;
+#endif
             sampleStart = Time.realtimeSinceStartupAsDouble;
             frames = 0;
         }

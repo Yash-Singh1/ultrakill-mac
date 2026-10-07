@@ -7,12 +7,19 @@ using Unity.Collections;
 using Unity.Jobs;
 using Unity.Jobs.LowLevel.Unsafe;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace ULTRAKILL.MacPort
 {
     public static class JobTuning
     {
         public static bool NativeBufferQueries = true;
+        #if FRAUD_TEST_TOOLS || PORTAL_OPTIMIZATION
+        public static bool PortalFlushEnabled = true;
+        public static bool PortalAsyncVisibility;
+        public static long PortalWaitTicks;
+        public static int PortalWaitCalls;
+        #endif
         public static int OriginalWorkers { get; private set; }
 
         public static void Install(GameObject root)
@@ -25,7 +32,25 @@ namespace ULTRAKILL.MacPort
         {
             return NativeBufferQueries ? buffer.GetNativeRenderBufferPtr() : IntPtr.Zero;
         }
+        #if FRAUD_TEST_TOOLS || PORTAL_OPTIMIZATION
+        public static void PortalFlush() { if (PortalFlushEnabled) GL.Flush(); }
+        public static void PortalWait(ref AsyncGPUReadbackRequest request)
+        {
+            if (PortalAsyncVisibility || PortalVisibilityCache.CanReuse) return;
+            long start = Stopwatch.GetTimestamp(); request.WaitForCompletion();
+            PortalWaitTicks += Stopwatch.GetTimestamp()-start; PortalWaitCalls++;
+        }
 
+        public static void PortalVisibility(ref NativeList<ULTRAKILL.Portal.PortalRenderV2.OnscreenPortalData> data, ulong bitset, ref NativeArray<bool> visibility, ref AsyncGPUReadbackRequest request)
+        {
+            // Pending visibility must never reuse indices from another frame.
+            // The GPU stencil still limits each camera's output to its portal.
+            if (PortalVisibilityCache.Enabled) bitset=PortalVisibilityCache.Resolve(ref data,bitset,ref request);
+            else if (PortalAsyncVisibility && (!request.done || request.hasError)) bitset = ulong.MaxValue;
+            ULTRAKILL.Portal.PortalRenderV2.UpdateOcclusionBurst(ref data, bitset, ref visibility);
+        }
+
+        #endif
         public sealed class JobComparison : MonoBehaviour
         {
             string control;

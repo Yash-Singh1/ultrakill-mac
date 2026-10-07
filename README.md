@@ -52,14 +52,16 @@ Preparation currently expects both development inputs at `../ULTRAKILL` and `../
 
 ## Port changes and checks
 
-The port repairs Metal buffer bindings, texture dimension queries, fixed samplers, and portal clipping outputs. It replaces Windows engine memory-layout accesses, caches blood decal geometry, enables native Burst routines, and guards blood cleanup after buffer disposal. It disables native graphics jobs because captures showed long rendering-job waits. Compute shader effects remain disabled. Steam initialization and read-only stats callbacks passed on both architectures; overlay and cloud synchronization remain untested.
+The port repairs Metal buffer bindings, texture dimension queries, fixed samplers, and portal clipping outputs. It replaces Windows engine memory-layout accesses, caches blood decal geometry, enables native Burst routines, and guards blood cleanup after buffer disposal. It disables native graphics jobs because captures showed long rendering-job waits. Portal visibility caching is enabled by default for the current Steam depot renderer. The older supported Windows build retains its original managed portal renderer. Identical visibility inputs reuse the last GPU mask; camera or portal changes refresh it. Room images and effects still render every frame. Compute shader effects remain disabled. Steam initialization and read-only stats callbacks passed on both architectures; overlay and cloud synchronization remain untested.
 
-The FPS display toggles with F7. Frame diagnostics record CPU and frame-time summaries. Shader checks use windowless Metal fixtures. Controlled blood workloads and Fraud portal benchmarks improved, but those measurements do not establish performance throughout the campaign.
+The FPS display toggles with F7. Frame diagnostics record CPU and frame-time summaries, portal camera passes, rendering resolution, and asynchronous CPU/GPU timings in Fraud. Shader checks use windowless Metal fixtures. Controlled blood workloads and isolated Burst routines improved, but those measurements do not establish performance throughout the campaign. Fraud benchmarks reject blank render targets and require a rendered image before reporting timings.
 
 ```sh
 .venv/bin/python -m unittest discover -s converter -p 'test_*.py'
 python3 tools/audit_publish.py
 ```
+
+A local Fraud fixture records the player and camera pose plus the room hierarchy in a JSON file and a binary sidecar for internal rendering tests. It is not included in the gameplay test bundle. Fixtures, copied saves, benchmark apps, and rendered images stay excluded from Git.
 
 The publication audit checks the index and all reachable commits for excluded files, binary content, and unexpected paths. Local test launches through `tools/run.py` support muted, isolated profiles and offscreen rendering.
 
@@ -82,3 +84,5 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Only one local game test bundle is retained, `ULTRAKILL Portal Test.app`. It starts normally, keeps enemies and gameplay enabled, and enables the portal visibility cache automatically. Its save profile is separate. The same portal optimization is enabled in the default build and converter output. Before packaging a replacement, `tools/make_portal_test.py` removes obsolete game test and staging bundles and refuses to replace a running bundle.

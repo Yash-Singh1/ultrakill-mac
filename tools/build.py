@@ -10,6 +10,7 @@ import struct
 import subprocess
 import datetime
 from game_source import resolve_source, describe_source
+from portal_support import supports_portal_cache
 from steam_support import install_steam
 from burst_support import install_burst
 
@@ -147,7 +148,8 @@ def main():
                     str(ROOT / "third_party" / "casualties-port" / "tools" / "rewrap" / "patch_ggm_bool.py"),
                     str(data / "globalgamemanagers"), "runInBackground", "on" if args.background else "off"], check=True)
     managed_property='-p:GameManagedPath='+str(data/'Managed')
-    subprocess.run(["dotnet", "build", str(ROOT / "tools/PortProbe"), "--configuration", "Release", "--verbosity", "quiet", managed_property], check=True)
+    portal_cache=supports_portal_cache(original/'ULTRAKILL_Data/Managed')
+    subprocess.run(["dotnet", "build", str(ROOT / "tools/PortProbe"), "--configuration", "Release", "--verbosity", "quiet", managed_property, "-p:EnablePortalOptimization="+str(portal_cache).lower()], check=True)
     shutil.copy2(ROOT / "tools/PortProbe/bin/Release/netstandard2.1/PortProbe.dll", data / "Managed/PortProbe.dll")
     subprocess.run(["dotnet", "build", str(ROOT / "tools/BloodRenderer"), "--configuration", "Release", "--verbosity", "quiet", managed_property], check=True)
     shutil.copy2(ROOT / "tools/BloodRenderer/bin/Release/netstandard2.1/MacBloodRenderer.dll", data / "Managed/MacBloodRenderer.dll")
@@ -158,6 +160,12 @@ def main():
     subprocess.run(['dotnet','run','--project',str(ROOT/'tools/BloodLifetimePatch'),'--configuration','Release',
                     '--',str(data/'Managed/Assembly-CSharp.dll'),str(blood_lifetime)],check=True)
     blood_lifetime.replace(data/'Managed/Assembly-CSharp.dll')
+    if portal_cache:
+        portal_optimized=data/'Managed/Assembly-CSharp.portals.dll'
+        subprocess.run(['dotnet','run','--project',str(ROOT/'tools/FraudPatch'),'--configuration','Release',
+                        '--',str(data/'Managed/Assembly-CSharp.dll'),str(portal_optimized),
+                        '--portal-sync-timing','--portal-async-visibility','--portal-visibility-cache'],check=True)
+        portal_optimized.replace(data/'Managed/Assembly-CSharp.dll')
     install_burst(app)
     install_steam(app, original, args.steam_api)
     source_info['steam_api_source']=str(args.steam_api.resolve())

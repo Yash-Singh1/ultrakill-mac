@@ -4,12 +4,23 @@
     <TargetFramework>netstandard2.1</TargetFramework>
     <LangVersion>latest</LangVersion><AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DefineConstants>ENABLE_PROFILER</DefineConstants>
+    <EnablePortalOptimization Condition="'$(EnablePortalOptimization)' == '' and '$(EnableFraudTests)' != 'true'">true</EnablePortalOptimization>
   </PropertyGroup>
   <PropertyGroup Condition="'$(EnableFraudTests)' == 'true'">
     <DefineConstants>$(DefineConstants);FRAUD_TEST_TOOLS</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(EnablePortalOptimization)' == 'true'">
+    <DefineConstants>$(DefineConstants);PORTAL_OPTIMIZATION</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(EnableFraudTests)' != 'true' and '$(EnablePortalOptimization)' != 'true'">
+    <Compile Remove="PortalVisibilityCache.cs;PortalOptimization.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(EnableFraudTests)' != 'true'">
-    <Compile Remove="FraudBenchmark.cs;BurstCheck.cs;FraudVisualCheck.cs;ShockwaveCheck.cs;BloodTransitionCheck.cs" />
+    <Compile Remove="FraudBenchmark.cs;BurstCheck.cs;FraudVisualCheck.cs;ShockwaveCheck.cs;BloodTransitionCheck.cs;PortalViewport.cs;PortalMeshCache.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(EnableFraudTests)' == 'true'">
+    <ProjectReference Include="../FraudFixture/FraudFixture.csproj" />
+    <Reference Include="UnityEngine.ImageConversionModule"><HintPath>$(GameManagedPath)/UnityEngine.ImageConversionModule.dll</HintPath></Reference>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="Unity.Burst"><HintPath>$(GameManagedPath)/Unity.Burst.dll</HintPath></Reference>
