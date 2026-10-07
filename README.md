@@ -6,6 +6,8 @@ The port uses Unity 2022.3.29f1's Mac Mono player, translates Windows graphics s
 
 The repository contains source only. Game files, saves, app bundles, runtime binaries, extracted shaders, generated patches, caches, and test captures stay local and are ignored by Git. `shader-source/Cage.hlsl` is the handwritten port implementation used by the shader comparison tools.
 
+Chess uses a universal Stockfish executable built from the source included in the Windows game, with its matching NNUE network embedded. The converter includes Stockfish's GPL license and corresponding source archive, including the network and macOS build recipe. It preserves the shipped source in the output and replaces its Windows executable. The native binary keeps an `.exe` suffix because the game's unchanged UCI launcher searches for that extension. Developer payload preparation downloads the matching network from official-stockfish if it is absent; the converter itself works offline.
+
 ## Converter
 
 A locally packaged `ULTRAKILL Converter.app` accepts a game directory, `ULTRAKILL_Data`, Steam library, or DepotDownloader version directory. Choose an input and output folder, then click Convert. Double-click the resulting `ULTRAKILL.app` to play.

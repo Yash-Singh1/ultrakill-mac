@@ -13,6 +13,7 @@ from game_source import resolve_source, describe_source
 from portal_support import supports_portal_cache
 from steam_support import install_steam
 from burst_support import install_burst
+from chess_support import build_engine, install_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 ORIGINAL = ROOT.parent / "ULTRAKILL"
@@ -168,6 +169,7 @@ def main():
         portal_optimized.replace(data/'Managed/Assembly-CSharp.dll')
     install_burst(app)
     install_steam(app, original, args.steam_api)
+    install_engine(app, build_engine(original/'ULTRAKILL_Data'))
     source_info['steam_api_source']=str(args.steam_api.resolve())
     source_marker.write_text(json.dumps(source_info,indent=2)+'\n')
     executable = contents / "MacOS" / "UnityPlayer"

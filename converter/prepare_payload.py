@@ -12,6 +12,7 @@ from make_universal import native_files
 import convert_metal as cm
 from burst_support import install_burst
 from steam_support import install_steam
+from chess_support import build_engine, ENGINE_NAME
 sys.path.insert(0,str(ROOT/'third_party/casualties-port/tools/rewrap'))
 from patch_ggm_bool import patch as bool_patch
 OUT=ROOT/'converter/payload'
@@ -35,7 +36,7 @@ def clone(source,dest):
     run('/bin/cp','-cR',source,dest)
 
 def runtime_fingerprint():
-    inputs=[ROOT/'tools/burst_support.py',ROOT/'tools/steam_support.py',ROOT/'tools/portal_support.py',Path(__file__)]
+    inputs=[ROOT/'tools/burst_support.py',ROOT/'tools/steam_support.py',ROOT/'tools/portal_support.py',ROOT/'tools/chess_support.py',Path(__file__)]
     for project in ['PortProbe','BloodRenderer','AssemblyPatcher','BloodLifetimePatch','FraudPatch','SteamPatcher','BurstHost']:
         inputs.extend(p for p in (ROOT/'tools'/project).rglob('*') if p.suffix in ['.cs','.csproj'] and not any(part in ['bin','obj'] for part in p.parts))
     h=hashlib.sha256()
@@ -71,6 +72,14 @@ def profile(source,label):
     (app/'Contents/Resources').mkdir(exist_ok=True)
     (app/'Contents/Frameworks').mkdir();(app/'Contents/MacOS').mkdir()
     helpers=OUT/'helpers'/identity;helpers.mkdir(parents=True,exist_ok=True)
+    engine=build_engine(data)
+    chess=None
+    if engine:
+        shutil.copy2(engine,helpers/ENGINE_NAME)
+        archive=OUT/'chess-source'/engine.parent.name
+        archive.parent.mkdir(exist_ok=True)
+        shutil.copy2(engine.with_suffix('.source.tar.gz'),archive)
+        chess=dict(file=ENGINE_NAME,sha256=filehash(engine),source_archive=str(archive.relative_to(OUT)),source_sha256=filehash(archive))
     prop='-p:GameManagedPath='+str(managed)
     portal_cache=supports_portal_cache(data/'Managed')
     for project,dll in [('PortProbe','PortProbe.dll'),('BloodRenderer','MacBloodRenderer.dll')]:
@@ -102,7 +111,9 @@ def profile(source,label):
         # Runtime fixes can change without the verified input or shader pack
         # changing. Refresh their helpers and deltas rather than returning stale
         # assemblies or regenerating the entire shader pack.
-        cached.update(binary_patches=binary,runtime_fingerprint=fingerprint,portal_visibility_cache=portal_cache)
+        cached.update(binary_patches=binary,runtime_fingerprint=fingerprint,portal_visibility_cache=portal_cache,chess_engine=chess)
+        engine_path='Contents/Resources/Data/StreamingAssets/ChessEngine/'+ENGINE_NAME
+        if chess and engine_path not in cached['universal_binaries']:cached['universal_binaries'].append(engine_path)
         cache.write_text(json.dumps(cached,indent=2)+'\n')
         shutil.rmtree(app)
         return cached
@@ -137,6 +148,8 @@ def profile(source,label):
     p=dict(name=label,assembly_sha256=identity,files=files,binary_patches=binary,helpers=str(helpers.relative_to(OUT)),shader_files=shader_files,shader_count=len(names),universal_binaries=[str(p) for p in native_files(OUT/'template.app')]+['Contents/Plugins/lib_burst_generated.bundle'])
     p['runtime_fingerprint']=fingerprint
     p['portal_visibility_cache']=portal_cache
+    p['chess_engine']=chess
+    if chess:p['universal_binaries'].append('Contents/Resources/Data/StreamingAssets/ChessEngine/'+ENGINE_NAME)
     cache.write_text(json.dumps(p,indent=2)+'\n')
     shutil.rmtree(app)
     return p

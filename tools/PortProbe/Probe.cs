@@ -48,6 +48,10 @@ namespace ULTRAKILL.MacPort
             BurstCheck.Run();
 #endif
             JobTuning.Benchmark();
+#if CHESS_TEST_TOOLS
+            if (Environment.GetEnvironmentVariable("ULTRAKILL_MAC_CHESS_CHECK") == "1")
+                diagnostics.AddComponent<ChessCheck>();
+#endif
             PhaseDiagnostics.Install(diagnostics);
             diagnostics.AddComponent<FrameDiagnostics>();
             if (Environment.GetEnvironmentVariable("ULTRAKILL_MAC_STEAM_CHECK") == "1")

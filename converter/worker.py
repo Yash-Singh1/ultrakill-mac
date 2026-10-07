@@ -70,6 +70,26 @@ def publish(source, destination):
         error = ctypes.get_errno()
         raise OSError(error, os.strerror(error), str(destination))
 
+def install_chess_engine(data, profile, payload):
+    spec = profile.get('chess_engine')
+    if not spec: return
+    name = spec['file']
+    if Path(name).name != name or not name.endswith('.exe'):
+        raise ValueError('Invalid chess engine payload path.')
+    engine = payload/profile['helpers']/name
+    if digest(engine) != spec['sha256'] or architectures(engine) != {'arm64', 'x86_64'}:
+        raise ValueError('The native chess engine payload is damaged.')
+    archive = payload/spec['source_archive']
+    if digest(archive) != spec['source_sha256']:
+        raise ValueError('The chess engine source archive is damaged.')
+    directory = data/'StreamingAssets/ChessEngine'
+    # Preserve Stockfish's shipped source and license. The unchanged game
+    # discovers *.exe, including this native universal Mach-O executable.
+    for old in directory.glob('*.exe'): old.unlink()
+    shutil.copy2(engine, directory/name)
+    (directory/name).chmod(0o755)
+    shutil.copy2(archive, directory/'stockfish-macos-source.tar.gz')
+
 def architectures(path):
     with path.open('rb') as f: header=f.read(4096)
     formats={b'\xca\xfe\xba\xbe':('>',20),b'\xbe\xba\xfe\xca':('<',20),b'\xca\xfe\xba\xbf':('>',32),b'\xbf\xba\xfe\xca':('<',32)}
@@ -132,6 +152,7 @@ def convert(source, output, import_saves=False, payload=PAYLOAD):
         if (data/'Plugins').exists(): shutil.rmtree(data/'Plugins')
         (contents/'Plugins').mkdir(exist_ok=True)
         shutil.copy2(payload/profile['helpers']/'lib_burst_generated.bundle', contents/'Plugins/lib_burst_generated.bundle')
+        install_chess_engine(data, profile, payload)
         shutil.copy2(payload/'unity default resources', data/'Resources/unity default resources')
         boot = data/'boot.config'
         lines = boot.read_text().splitlines() if boot.exists() else []
@@ -186,7 +207,7 @@ def convert(source, output, import_saves=False, payload=PAYLOAD):
         info_path.write_bytes(plistlib.dumps(info))
         shutil.copy2(payload/'GameLauncher',contents/'MacOS/ULTRAKILL')
         (contents/'MacOS/ULTRAKILL').chmod(0o755)
-        report = dict(config, unity_version='2022.3.29f1', architectures=['arm64','x86_64'], minimum_macos='11.0', shaders_converted=converted_count, input_verified=True, patch_pack_version=1, portal_visibility_cache=profile.get('portal_visibility_cache',False))
+        report = dict(config, unity_version='2022.3.29f1', architectures=['arm64','x86_64'], minimum_macos='11.0', shaders_converted=converted_count, input_verified=True, patch_pack_version=1, portal_visibility_cache=profile.get('portal_visibility_cache',False), native_chess_engine=bool(profile.get('chess_engine')))
         (contents/'Resources/conversion-report.json').write_text(json.dumps(report,indent=2)+'\n')
         emit(93, 'Signing the app bundle')
         subprocess.run(['/usr/bin/codesign','--force','--deep','--sign','-',str(app)], check=True, stdout=sys.stderr)

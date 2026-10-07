@@ -3,6 +3,17 @@ import ctypes, hashlib, importlib.util, json, pathlib, subprocess, sys, tempfile
 HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('converter_worker',HERE/'worker.py');w=importlib.util.module_from_spec(spec);spec.loader.exec_module(w)
 class Boundaries(unittest.TestCase):
+    def test_chess_payload_is_verified_before_removing_windows_engine(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=pathlib.Path(t);directory=root/'data/StreamingAssets/ChessEngine';directory.mkdir(parents=True)
+            windows=directory/'stockfish-windows-x86-64.exe';windows.write_bytes(b'windows')
+            payload=root/'payload';helper=payload/'helpers';helper.mkdir(parents=True)
+            native=helper/'stockfish-macos.exe';native.write_bytes(b'corrupt')
+            profile=dict(helpers='helpers',chess_engine=dict(file=native.name,sha256='wrong'))
+            with self.assertRaisesRegex(ValueError,'damaged'):w.install_chess_engine(root/'data',profile,payload)
+            self.assertEqual(windows.read_bytes(),b'windows')
+            profile['chess_engine']['file']='../escape.exe'
+            with self.assertRaisesRegex(ValueError,'path'):w.install_chess_engine(root/'data',profile,payload)
     def test_source_layouts(self):
         with tempfile.TemporaryDirectory() as t:
             library=pathlib.Path(t);root=library/'steamapps/common/ULTRAKILL';file=root/'ULTRAKILL_Data/Managed/Assembly-CSharp.dll';file.parent.mkdir(parents=True);file.write_bytes(b'input')

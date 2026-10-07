@@ -12,6 +12,12 @@
   <PropertyGroup Condition="'$(EnablePortalOptimization)' == 'true'">
     <DefineConstants>$(DefineConstants);PORTAL_OPTIMIZATION</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(EnableChessTests)' == 'true'">
+    <DefineConstants>$(DefineConstants);CHESS_TEST_TOOLS</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(EnableChessTests)' != 'true'">
+    <Compile Remove="ChessCheck.cs" />
+  </ItemGroup>
   <ItemGroup Condition="'$(EnableFraudTests)' != 'true' and '$(EnablePortalOptimization)' != 'true'">
     <Compile Remove="PortalVisibilityCache.cs;PortalOptimization.cs" />
   </ItemGroup>
