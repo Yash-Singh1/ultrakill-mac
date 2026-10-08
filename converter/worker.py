@@ -33,27 +33,25 @@ def source_root(path):
 def validate(source, payload=PAYLOAD):
     source = Path(source).resolve()
     manifest = json.loads((payload/'manifest.json').read_text())
-    identity = digest(source/'ULTRAKILL_Data/Managed/Assembly-CSharp.dll')
-    profile = next((p for p in manifest['profiles'] if p['assembly_sha256'] == identity), None)
-    if not profile: raise ValueError('This game build is not supported by the packaged patches. Supported builds: '+', '.join(p['name'] for p in manifest['profiles'])+'. New builds need a new verified patch pack.')
     root = source/'ULTRAKILL_Data'
     if root.is_symlink(): raise ValueError('Game data may not contain symlinks: ULTRAKILL_Data')
-    actual = set()
-    for file in root.rglob('*'):
-        name = str(file.relative_to(root))
-        # Reject links even in discarded directories, including broken links
-        # and directory links that rglob would otherwise skip.
-        if file.is_symlink(): raise ValueError('Game data may not contain symlinks: '+name)
-        if file.is_file() and not discarded_input_file(name): actual.add(name)
+    identity_file = root/'Managed/Assembly-CSharp.dll'
+    if identity_file.is_symlink() or identity_file.parent.is_symlink():
+        raise ValueError('Game data may not contain symlinks: Managed/Assembly-CSharp.dll')
+    identity = digest(identity_file)
+    profile = next((p for p in manifest['profiles'] if p['assembly_sha256'] == identity), None)
+    if not profile: raise ValueError('This game build is not supported by the packaged patches. Supported builds: '+', '.join(p['name'] for p in manifest['profiles'])+'. New builds need a new verified patch pack.')
     expected = {name for name in profile['files'] if not discarded_input_file(name)}
-    # Windows plugins are removed and replaced from our native payload. Their
-    # backups/configuration, contents, and absence do not affect conversion.
-    # Every retained DLL and asset must still match the supported input exactly.
-    if actual != expected:
-        differences = []
-        if expected-actual: differences.append('Missing: '+', '.join(sorted(expected-actual)[:5]))
-        if actual-expected: differences.append('Extra: '+', '.join(sorted(actual-expected)[:5]))
-        raise ValueError('Game files differ from the supported build. '+'; '.join(differences))
+    # Only manifest files are used. Extras, including Windows plugins and
+    # Finder metadata, are neither validated nor copied into the output.
+    missing = []
+    for name in sorted(expected):
+        file = root/name
+        if file.is_symlink() or any(p.is_symlink() for p in file.parents if p != root.parent):
+            raise ValueError('Game data may not contain symlinks: '+name)
+        if not file.is_file(): missing.append(name)
+    if missing:
+        raise ValueError('Game files differ from the supported build. Missing: '+', '.join(missing[:5]))
     for i, name in enumerate(sorted(expected)):
         checksum = profile['files'][name]
         file = root/name
@@ -64,6 +62,7 @@ def validate(source, payload=PAYLOAD):
     return profile
 
 def clone(source, destination):
+    source, destination = Path(source), Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(['/bin/cp', '-cR', str(source), str(destination)], capture_output=True, text=True)
     if result.returncode:
@@ -71,11 +70,19 @@ def clone(source, destination):
         if source.is_dir(): shutil.copytree(source, destination, symlinks=True)
         else: shutil.copy2(source, destination)
 
-def copy_game_data(source, destination):
-    destination.mkdir(parents=True)
-    for child in sorted(source.iterdir()):
-        if child.name not in DISCARDED_INPUT_DIRECTORIES:
-            clone(child, destination/child.name)
+def copy_game_data(source, destination, profile):
+    allowed = set()
+    for name in profile['files']:
+        if discarded_input_file(name): continue
+        file = Path(name)
+        allowed.add(file)
+        allowed.update(file.parents)
+    def ignore(directory, names):
+        relative = Path(directory).relative_to(source)
+        return [name for name in names if relative/name not in allowed]
+    # Keep APFS clones for required files without copying unrelated files or
+    # following links in ignored directories.
+    shutil.copytree(source, destination, ignore=ignore, copy_function=clone)
 
 def patched_bytes(old, spec, payload):
     if hashlib.sha256(old).hexdigest() != spec['before']: raise ValueError('Patch input checksum changed.')
@@ -156,7 +163,7 @@ def convert(source, output, import_saves=False, payload=PAYLOAD):
         clone(payload/'template.app', app)
         contents = app/'Contents'; data = contents/'Resources/Data'
         emit(20, 'Copying game assets')
-        copy_game_data(source/'ULTRAKILL_Data', data)
+        copy_game_data(source/'ULTRAKILL_Data', data, profile)
         (contents/'StreamingAssets').symlink_to('Resources/Data/StreamingAssets')
         # Do not change source permissions or attributes, including read-only sources.
         for file in data.rglob('*'):

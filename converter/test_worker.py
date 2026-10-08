@@ -21,34 +21,60 @@ class Boundaries(unittest.TestCase):
             shutil.rmtree(data/'Plugins')
             self.assertEqual(w.validate(source,payload),profile)
     def test_retained_assets_and_code_still_require_exact_matches(self):
-        for mutation in ['changed_asset','changed_dll','missing_asset','extra_dll','similar_directory']:
+        for mutation in ['changed_asset','changed_dll','missing_asset','asset_is_directory']:
             with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as t:
                 source,data,payload,_=self.supported_source(pathlib.Path(t))
                 if mutation=='changed_asset':(data/'sharedassets0.assets').write_bytes(b'changed')
                 elif mutation=='changed_dll':(data/'Managed/UnityEngine.CoreModule.dll').write_bytes(b'changed')
                 elif mutation=='missing_asset':(data/'sharedassets0.assets').unlink()
-                elif mutation=='extra_dll':(data/'Managed/unknown.dll').write_bytes(b'extra')
                 else:
-                    file=data/'PluginsExtra/extra.dll';file.parent.mkdir();file.write_bytes(b'extra')
+                    file=data/'sharedassets0.assets';file.unlink();file.mkdir()
                 with self.assertRaisesRegex(ValueError,'supported build'):w.validate(source,payload)
+    def test_extra_files_are_ignored_everywhere_and_not_copied(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=pathlib.Path(t);source,data,payload,profile=self.supported_source(root)
+            extras=['.DS_Store','Managed/.DS_Store','Managed/unknown.dll','sharedassets999.assets',
+                    'StreamingAssets/Mods/mod.bundle','PluginsExtra/extra.dll','backup/Managed/Assembly-CSharp.dll']
+            for name in extras:
+                file=data/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(b'ignore me')
+            (source/'.DS_Store').write_bytes(b'outside data')
+            self.assertEqual(w.validate(source,payload),profile)
+            output=root/'output/Data';w.copy_game_data(data,output,profile)
+            expected={name for name in profile['files'] if not w.discarded_input_file(name)}
+            self.assertEqual({str(p.relative_to(output)) for p in output.rglob('*') if p.is_file()},expected)
+            for name in extras:
+                self.assertFalse((output/name).exists())
+                self.assertEqual((data/name).read_bytes(),b'ignore me')
     def test_windows_plugins_are_not_copied_or_changed(self):
         with tempfile.TemporaryDirectory() as t:
-            root=pathlib.Path(t);_,data,_,_=self.supported_source(root)
+            root=pathlib.Path(t);_,data,_,profile=self.supported_source(root)
             plugin=data/'Plugins/x86_64/steam_api64.dll';before=plugin.read_bytes()
             for name in ['steam_api64.rne','steam_emu.ini']:(plugin.parent/name).write_text('unused')
-            output=root/'output/Data';w.copy_game_data(data,output)
+            output=root/'output/Data';w.copy_game_data(data,output,profile)
             self.assertFalse((output/'Plugins').exists())
             self.assertEqual(plugin.read_bytes(),before)
             for name in ['Managed/Assembly-CSharp.dll','Managed/UnityEngine.CoreModule.dll','sharedassets0.assets']:
                 self.assertEqual((output/name).read_bytes(),(data/name).read_bytes())
-    def test_links_in_discarded_plugin_directory_are_rejected(self):
+    def test_links_in_extra_files_are_ignored_without_following_them(self):
         for target in ['missing','external-file','external-directory']:
             with self.subTest(target=target),tempfile.TemporaryDirectory() as t:
-                root=pathlib.Path(t);source,data,payload,_=self.supported_source(root)
+                root=pathlib.Path(t);source,data,payload,profile=self.supported_source(root)
                 outside=root/target
                 if target=='external-file':outside.write_text('outside')
                 elif target=='external-directory':outside.mkdir()
                 (data/'Plugins/x86_64/link').symlink_to(outside,target_is_directory=target=='external-directory')
+                (data/'extra-link').symlink_to(outside,target_is_directory=target=='external-directory')
+                self.assertEqual(w.validate(source,payload),profile)
+                output=root/'output';w.copy_game_data(data,output,profile)
+                self.assertFalse((output/'Plugins').exists())
+                self.assertFalse((output/'extra-link').is_symlink())
+    def test_links_in_required_files_and_directories_are_rejected(self):
+        for name in ['sharedassets0.assets','Managed/Assembly-CSharp.dll','Managed/UnityEngine.CoreModule.dll','Managed','ULTRAKILL_Data']:
+            with self.subTest(name=name),tempfile.TemporaryDirectory() as t:
+                root=pathlib.Path(t);source,data,payload,_=self.supported_source(root)
+                file=source/name if name=='ULTRAKILL_Data' else data/name
+                target=root/'required-original';file.rename(target)
+                file.symlink_to(target,target_is_directory=target.is_dir())
                 with self.assertRaisesRegex(ValueError,'symlinks'):w.validate(source,payload)
     def test_chess_payload_is_verified_before_removing_windows_engine(self):
         with tempfile.TemporaryDirectory() as t:
