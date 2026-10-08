@@ -12,7 +12,7 @@ Chess uses a universal Stockfish executable built from the source included in th
 
 A locally packaged `ULTRAKILL Converter.app` accepts a game directory, `ULTRAKILL_Data`, Steam library, or DepotDownloader version directory. Choose an input and output folder, then click Convert. Double-click the resulting `ULTRAKILL.app` to play.
 
-The verified patch pack supports the original Windows build used during development and Steam depot 1229491, manifest 22957324. It checks every input data file and rejects unsupported versions or modified files. Future updates need a new verified patch pack.
+The verified patch pack supports the original Windows build used during development and Steam depot 1229491, manifest 22957324. It checks all retained game code and assets and rejects unsupported versions or modified files. Windows files under `ULTRAKILL_Data/Plugins` are discarded and replaced by the native payload, so extra files, modifications, or missing files there do not block conversion. Symlinks remain rejected throughout the input data. Future updates need a new verified patch pack.
 
 The optional save import copies Windows saves into a new Mac profile without importing Windows graphics settings. Each output uses `~/Library/Application Support/ULTRAKILL Mac/<profile ID>/`. Moving an app preserves its profile; converting again creates a new one. Conversion never overwrites an existing output app or source files.
 

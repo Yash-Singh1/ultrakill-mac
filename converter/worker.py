@@ -6,6 +6,10 @@ import bsdiff4
 import UnityPy
 
 PAYLOAD = Path(__file__).resolve().parent / 'payload'
+DISCARDED_INPUT_DIRECTORIES = {'Plugins'}
+
+def discarded_input_file(name):
+    return Path(name).parts[0] in DISCARDED_INPUT_DIRECTORIES
 
 def digest(path):
     h = hashlib.sha256()
@@ -27,17 +31,31 @@ def source_root(path):
     return root
 
 def validate(source, payload=PAYLOAD):
+    source = Path(source).resolve()
     manifest = json.loads((payload/'manifest.json').read_text())
     identity = digest(source/'ULTRAKILL_Data/Managed/Assembly-CSharp.dll')
     profile = next((p for p in manifest['profiles'] if p['assembly_sha256'] == identity), None)
     if not profile: raise ValueError('This game build is not supported by the packaged patches. Supported builds: '+', '.join(p['name'] for p in manifest['profiles'])+'. New builds need a new verified patch pack.')
     root = source/'ULTRAKILL_Data'
-    actual = {str(p.relative_to(root)) for p in root.rglob('*') if p.is_file()}
-    expected = set(profile['files'])
-    # Unrecognized DLLs or asset bundles must not enter a native transplant.
+    if root.is_symlink(): raise ValueError('Game data may not contain symlinks: ULTRAKILL_Data')
+    actual = set()
+    for file in root.rglob('*'):
+        name = str(file.relative_to(root))
+        # Reject links even in discarded directories, including broken links
+        # and directory links that rglob would otherwise skip.
+        if file.is_symlink(): raise ValueError('Game data may not contain symlinks: '+name)
+        if file.is_file() and not discarded_input_file(name): actual.add(name)
+    expected = {name for name in profile['files'] if not discarded_input_file(name)}
+    # Windows plugins are removed and replaced from our native payload. Their
+    # backups/configuration, contents, and absence do not affect conversion.
+    # Every retained DLL and asset must still match the supported input exactly.
     if actual != expected:
-        raise ValueError('Game files differ from the supported build. Missing: '+', '.join(sorted(expected-actual)[:5])+'; extra: '+', '.join(sorted(actual-expected)[:5]))
-    for i, (name, checksum) in enumerate(profile['files'].items()):
+        differences = []
+        if expected-actual: differences.append('Missing: '+', '.join(sorted(expected-actual)[:5]))
+        if actual-expected: differences.append('Extra: '+', '.join(sorted(actual-expected)[:5]))
+        raise ValueError('Game files differ from the supported build. '+'; '.join(differences))
+    for i, name in enumerate(sorted(expected)):
+        checksum = profile['files'][name]
         file = root/name
         if file.is_symlink() or any(p.is_symlink() for p in file.parents if p != root.parent):
             raise ValueError('Game data may not contain symlinks: '+name)
@@ -52,6 +70,12 @@ def clone(source, destination):
         if destination.exists(): shutil.rmtree(destination) if destination.is_dir() else destination.unlink()
         if source.is_dir(): shutil.copytree(source, destination, symlinks=True)
         else: shutil.copy2(source, destination)
+
+def copy_game_data(source, destination):
+    destination.mkdir(parents=True)
+    for child in sorted(source.iterdir()):
+        if child.name not in DISCARDED_INPUT_DIRECTORIES:
+            clone(child, destination/child.name)
 
 def patched_bytes(old, spec, payload):
     if hashlib.sha256(old).hexdigest() != spec['before']: raise ValueError('Patch input checksum changed.')
@@ -121,7 +145,7 @@ def convert(source, output, import_saves=False, payload=PAYLOAD):
     written_files = profile['shader_files'] if clone_supported else profile['files']
     seed_names=['Cybergrind','Palettes']+(['Saves'] if import_saves else [])
     seed_bytes=sum(p.stat().st_size for name in seed_names if (source/name).is_dir() for p in (source/name).rglob('*') if p.is_file())
-    required = sum((source/'ULTRAKILL_Data'/name).stat().st_size for name in written_files) + 300*1024*1024 + seed_bytes
+    required = sum((source/'ULTRAKILL_Data'/name).stat().st_size for name in written_files if not discarded_input_file(name)) + 300*1024*1024 + seed_bytes
     if shutil.disk_usage(ancestor).free < required:
         raise ValueError(f'Conversion needs at least {required/(1024**3):.1f} GB free at the output location, including room for rewritten assets.')
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -132,7 +156,7 @@ def convert(source, output, import_saves=False, payload=PAYLOAD):
         clone(payload/'template.app', app)
         contents = app/'Contents'; data = contents/'Resources/Data'
         emit(20, 'Copying game assets')
-        clone(source/'ULTRAKILL_Data', data)
+        copy_game_data(source/'ULTRAKILL_Data', data)
         (contents/'StreamingAssets').symlink_to('Resources/Data/StreamingAssets')
         # Do not change source permissions or attributes, including read-only sources.
         for file in data.rglob('*'):
@@ -149,7 +173,8 @@ def convert(source, output, import_saves=False, payload=PAYLOAD):
             (data/name).write_bytes(patched_bytes((source/'ULTRAKILL_Data'/name).read_bytes(), spec, payload))
         for name in ['PortProbe.dll', 'MacBloodRenderer.dll']:
             shutil.copy2(payload/profile['helpers']/name, data/'Managed'/name)
-        if (data/'Plugins').exists(): shutil.rmtree(data/'Plugins')
+        for name in DISCARDED_INPUT_DIRECTORIES:
+            if (data/name).exists(): shutil.rmtree(data/name)
         (contents/'Plugins').mkdir(exist_ok=True)
         shutil.copy2(payload/profile['helpers']/'lib_burst_generated.bundle', contents/'Plugins/lib_burst_generated.bundle')
         install_chess_engine(data, profile, payload)

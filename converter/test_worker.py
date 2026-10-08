@@ -3,6 +3,53 @@ import ctypes, hashlib, importlib.util, json, pathlib, subprocess, sys, tempfile
 HERE=pathlib.Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('converter_worker',HERE/'worker.py');w=importlib.util.module_from_spec(spec);spec.loader.exec_module(w)
 class Boundaries(unittest.TestCase):
+    def supported_source(self, root):
+        source=root/'game';data=source/'ULTRAKILL_Data';payload=root/'pack';payload.mkdir()
+        for name in ['Managed/Assembly-CSharp.dll','Managed/UnityEngine.CoreModule.dll','sharedassets0.assets','Plugins/x86_64/steam_api64.dll']:
+            file=data/name;file.parent.mkdir(parents=True,exist_ok=True);file.write_bytes(name.encode())
+        files={str(p.relative_to(data)):w.digest(p) for p in data.rglob('*') if p.is_file()}
+        profile=dict(name='test',assembly_sha256=files['Managed/Assembly-CSharp.dll'],files=files)
+        (payload/'manifest.json').write_text(json.dumps({'profiles':[profile]}))
+        return source,data,payload,profile
+    def test_discarded_windows_plugin_files_do_not_block_conversion(self):
+        with tempfile.TemporaryDirectory() as t:
+            source,data,payload,profile=self.supported_source(pathlib.Path(t))
+            plugin=data/'Plugins/x86_64/steam_api64.dll';plugin.write_bytes(b'changed unused Windows binary')
+            for name in ['steam_api64.rne','steam_emu.ini']:(plugin.parent/name).write_text('unused extra file')
+            self.assertEqual(w.validate(source,payload),profile)
+            import shutil
+            shutil.rmtree(data/'Plugins')
+            self.assertEqual(w.validate(source,payload),profile)
+    def test_retained_assets_and_code_still_require_exact_matches(self):
+        for mutation in ['changed_asset','changed_dll','missing_asset','extra_dll','similar_directory']:
+            with self.subTest(mutation=mutation),tempfile.TemporaryDirectory() as t:
+                source,data,payload,_=self.supported_source(pathlib.Path(t))
+                if mutation=='changed_asset':(data/'sharedassets0.assets').write_bytes(b'changed')
+                elif mutation=='changed_dll':(data/'Managed/UnityEngine.CoreModule.dll').write_bytes(b'changed')
+                elif mutation=='missing_asset':(data/'sharedassets0.assets').unlink()
+                elif mutation=='extra_dll':(data/'Managed/unknown.dll').write_bytes(b'extra')
+                else:
+                    file=data/'PluginsExtra/extra.dll';file.parent.mkdir();file.write_bytes(b'extra')
+                with self.assertRaisesRegex(ValueError,'supported build'):w.validate(source,payload)
+    def test_windows_plugins_are_not_copied_or_changed(self):
+        with tempfile.TemporaryDirectory() as t:
+            root=pathlib.Path(t);_,data,_,_=self.supported_source(root)
+            plugin=data/'Plugins/x86_64/steam_api64.dll';before=plugin.read_bytes()
+            for name in ['steam_api64.rne','steam_emu.ini']:(plugin.parent/name).write_text('unused')
+            output=root/'output/Data';w.copy_game_data(data,output)
+            self.assertFalse((output/'Plugins').exists())
+            self.assertEqual(plugin.read_bytes(),before)
+            for name in ['Managed/Assembly-CSharp.dll','Managed/UnityEngine.CoreModule.dll','sharedassets0.assets']:
+                self.assertEqual((output/name).read_bytes(),(data/name).read_bytes())
+    def test_links_in_discarded_plugin_directory_are_rejected(self):
+        for target in ['missing','external-file','external-directory']:
+            with self.subTest(target=target),tempfile.TemporaryDirectory() as t:
+                root=pathlib.Path(t);source,data,payload,_=self.supported_source(root)
+                outside=root/target
+                if target=='external-file':outside.write_text('outside')
+                elif target=='external-directory':outside.mkdir()
+                (data/'Plugins/x86_64/link').symlink_to(outside,target_is_directory=target=='external-directory')
+                with self.assertRaisesRegex(ValueError,'symlinks'):w.validate(source,payload)
     def test_chess_payload_is_verified_before_removing_windows_engine(self):
         with tempfile.TemporaryDirectory() as t:
             root=pathlib.Path(t);directory=root/'data/StreamingAssets/ChessEngine';directory.mkdir(parents=True)
